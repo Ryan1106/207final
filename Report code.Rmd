@@ -1,0 +1,491 @@
+---
+title: "The effect of virus types and vacciantion level on development of COVID-19"
+author: "Xiaoran Zhu---920268825"
+date: "2022-03-04"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.pos = 'H')
+```
+
+# Abstract
+<p style="text-align:justify;"> 
+<br>Since the outbreak of COVID-19 from the end of 2019, COVID-19 has spread to several countries around the world and has had a huge impact on many countries. So, it is important to establish appropriate models to explore the factors that influence the new cases every day. In this project, We first draw the sequence diagram of new cases per day to observe the characteristic of the spread of COVID-19 from 2020-1-03 to 2022-03-01 in the United States. The diagram indicates that we can divide the development of COVID-19 epidemic into three periods in the United States. And the three periods correspond to different virus (SARS-CoV-2, delta, omicron). Meanwhile, it is also reasonable to study the impact of the vaccination level on daily new cases. We conduct data description to get the information included in variables. And then, we choose virus type and vaccination level as factors to build two-way ANOVA model to explore whether daily new cases are similar across different treatments of virus types and vaccination levels. In order to satisfy the normality, we take log-transformation on response variable--daily new cases. The results shows that every virus type is different than the others in terms of daily new cases in the United States. And low vaccination level is higher than the others in terms of daily new cases in the United States. Based on the sensitivity analysis, our model satisfies the normality and homogeneity. Therefore, vaccinating and controlling the mutation of virus is helpful to control the development of COVID-19 epidemic.
+<br>**Key words**: virus type, vaccination level, two-way ANOVA, causal inference
+</p>
+
+# Introduction
+<p style="text-align:justify;">
+<br>The outbreak of COVID-19 virus continues to constitute an international public health emergency. It is important to explore the factors that influences the development of COVID-19 epidemic, which can help us to control the spread of virus. Some scholars have explored that relationships between environmental factors and the incidence of COVID-19; Some scholars have studied that the effect of temperature and relative humidity on daily new cases in different countries. Our project will focus on exploring the impact of virus types and vaccination level on daily new cases in USA. The results will lead people to realize the importance of vaccinating and controlling the mutation of virus.
+</p>
+
+# Descriptive analysis
+## Data description
+<p style="text-align:justify;">
+```{r,echo = F,include = FALSE}
+library(tidyverse)
+covid = read_csv("https://covid19.who.int/WHO-COVID-19-global-data.csv")
+```
+<br>The data that the project would utilize comes from WHO website. All data and information could be found in https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports and http://ourworldindata.org/coronavirus. 
+<br>In this project, I concentrate on exploring the effect of virus types and the daily vaccination level on the daily new cases in the United States. In other words, the project utilize daily new cases in the United States as response variable; The virus type (SARS-CoV-2, delta, omicron ) and daily vaccination level (low, medium and high) as factors.
+</p>
+
+## Visualization
+<p style="text-align:justify;">
+<br>Firstly, the project draw the sequence diagram of daily new cases from 2020-1-03 to 2022-03-01. The below picture indicates that there are three distinct spikes from 2020-1-03 to 2022-03-01. And based on the information from WHO website, the appearance of the second spike coincided with the spread of delta virus, the appearance of the third spike coincided with the spread of omicron virus. Thus, it is reasonable to explore the effect of virus types on the daily new cases in the United States. Meanwhile, as we know, vaccination level also has an effect on spreading of virus. Thus, the project also explores the effect of vaccination level on daily new cases in USA.
+```{r,echo = F,include = FALSE}
+usa_covid = covid[covid$Country == 'United States of America',]
+usa_covid_timeseries = ts(usa_covid$New_cases, start = c(2020, 1, 3), frequency = 365)
+library(fpp2)
+```
+```{r, echo = F}
+autoplot(usa_covid_timeseries) + ggtitle("the sequence diagram of new case") + xlab("time") + ylab("new case") + theme(text = element_text(family = "STHeiti")) + theme(plot.title = element_text(hjust = 0.5))
+```
+<br>We first explore the effect of virus types on daily new cases. During some periods, multiple viruses could be present at the same time, so we need to filt out corresponding data. We draw the scatter plot to observe the distribution of new cases in different virus types. Based on below graph, different virus has different effect on daily new cases. Omicron virus has stronger infectiousness, and there no obvious difference between delta and SARS-Cov-2.
+```{r, echo = F,include = FALSE}
+mid_data = covid[covid$Country == 'United States of America',]
+covid_usa = mid_data[20:789, ]
+
+covid_case = covid_usa %>% 
+  select(Date_reported, New_cases) %>% 
+  mutate(variant = case_when(
+    Date_reported <= '2021-4-1' ~ 'SARS-Cov-2',
+    Date_reported >= '2021-7-12' &
+    Date_reported <= '2021-12-15' ~ 'Delta',
+    Date_reported >= '2021-12-27' ~ 'Omicron',
+    TRUE ~ '0'
+  ))
+original_data =  read.csv("/Users/zhuxiaoran/Desktop/STA207/covid-data.csv")
+full_usa_data = original_data[original_data$iso_code == 'USA',]
+
+covid_case_1 = full_usa_data %>% 
+  mutate(new_vaccinated = c(0, diff(people_vaccinated)))%>%
+  select(new_vaccinated, population)
+
+covid_case_2 = covid_case_1 %>% 
+  mutate(vaccinated_ratio = (new_vaccinated / population) * 100)%>%
+  select(vaccinated_ratio)
+
+final_data = cbind(covid_case, covid_case_2) %>% 
+  replace_na(list(vaccinated_ratio = 0)) %>% 
+  filter(variant != 0, vaccinated_ratio != 0)
+
+a = max(final_data$vaccinated_ratio);a
+b = min(final_data$vaccinated_ratio);b
+c = median(final_data$vaccinated_ratio);c
+d = mean(final_data$vaccinated_ratio);d
+quantile(final_data$vaccinated_ratio, c(0.33, 0.66))
+
+final_case = final_data %>% 
+  select(Date_reported, New_cases, variant, vaccinated_ratio) %>% 
+  mutate(vaccinated_level = case_when(
+    vaccinated_ratio <= 0.078 ~ 'low',
+    vaccinated_ratio > 0.078  &
+    vaccinated_ratio <= 0.147 ~ 'medium',
+    TRUE ~ 'high'
+  ))
+library(ggplot2)
+```
+
+```{r, echo = F}
+ggplot(final_case) +
+  aes(x = variant, y = New_cases, color = variant) +
+  geom_jitter() +
+  theme(legend.position = "none")
+```
+<br>Based on below plot, it is hard to say vaccination levels have different effect on daily new cases. Thus, we need to draw boxplot to investigate the effect of virus types and vaccination levels on daily new cases. Meanwhile, boxplot can help us to detect the outlier.
+```{r, echo = F}
+ggplot(final_case) +
+  aes(x = vaccinated_level, y = New_cases, color = vaccinated_level) +
+  geom_jitter() +
+  theme(legend.position = "none")
+```
+```{r,echo = F}
+ggplot(final_case, aes(x = variant, y = New_cases)) +
+  geom_boxplot(aes(colour = variant))
+```
+```{r, echo = F}
+ggplot(final_case, aes(x = vaccinated_level, y = New_cases)) +
+  geom_boxplot(aes(colour = vaccinated_level))
+```
+<br>The above boxplot tell us that omicron has stronger infectiousness. Also, the other boxplot tell us that the median of daily new cases for high vaccination level is less than the median of daily new cases for medium and low vaccination level. Thus, it is reasonable to speculate that the virus type could have effect on spreading of virus in USA. Meanwhile, we can observe that there exists outlier in low vaccination level and medium vaccination level. Thus it is necessary to process these outlier. 
+<br>The project utilize log transformation to process response variable (daily new cases in USA). 
+```{r, echo = F,include = FALSE}
+final_case_1 = final_case %>% 
+  mutate(log_newcase = log(New_cases))%>%
+  select(Date_reported, log_newcase, variant, vaccinated_ratio, vaccinated_level)
+```
+<br>Using processed data to draw boxplot, the result is below, we can see that there exists some values that are distant from the other observations in low vaccination level and medium vaccination level after doing log transformation. So, it is necessary to find the sources of these outliers. By finding these outliers, we can see that these observations are distributed around Christmas. So we consider these observations are influenced by festival effect. Thus, it is reasonable to remove them.
+```{r, echo = F}
+ggplot(final_case_1, aes(x = variant, y = log_newcase)) +
+  geom_boxplot(aes(colour = variant))
+
+ggplot(final_case_1, aes(x = vaccinated_level, y = log_newcase)) +
+  geom_boxplot(aes(colour = vaccinated_level))
+```
+```{r, echo = F,include = FALSE}
+out = boxplot.stats(final_case_1$log_newcase)$out
+final_case_1 %>% 
+  filter(log_newcase %in% out)
+
+final_case_1 = final_case_1 %>% 
+  filter(!(log_newcase %in% out))
+```
+
+```{r, echo = F,include = FALSE}
+library(DT)
+```
+```{r, echo = F}
+datatable(final_case_1, options = list(pageLength = 5))
+```
+</p>
+
+# Methods and Results
+## Methods
+<p style="text-align:justify;">
+<br>In order to explore the effect of virus types and vaccination levels on daily new cases, we usually consider that utilizing two-way ANOVA to study. ANOVA can help us to compare the impact of the different levels of a factor on a response variable. Thus, in this project, We are going to use Two- way-ANOVA to help us to solve the question: whether daily new cases are similar across different treatments of virus types and vaccination. In order to satisfy normality assumption, we take log-transform the response variable (daily new cases), and considering that the influence of festival effect, we remove some outliers.
+```{r,echo = F}
+ggplot(final_case_1, aes(x = variant, y = log_newcase)) +
+  geom_boxplot(aes(colour = variant))
+ggplot(final_case_1, aes(x = vaccinated_level, y = log_newcase)) +
+  geom_boxplot(aes(colour = vaccinated_level))
+```
+<br>Based on above boxplots, after taking log-transform response variable, the impact of the different levels of virus types on response variable is different. The impact of Omicron on daily new cases is the strongest, and the difference is slight between Delta and SARS-Cov-2. The second boxplot shows that different vaccination level would take different impact on daily new cases. In general, the higher vaccination level, the less new cases per day in USA. In other words, taking vaccination can control the spreading of virus better.
+
+<br>Our two-way-ANOVA is below: <br>${Y_{ijk}}={\mu_{ij}+{\alpha_{i}+{\beta_{j}+{(\alpha\beta)_{ij}}+{\epsilon_{ijk}}}}}$, 
+<br>where the index ${i}$ refers to the virus type, the index j refers to the vaccination levels.
+<br>${\epsilon_{ijk}}$ are i.i.d N(0,${\sigma^2}$). 
+<br>The virus type has three types: SARS-Cov-2$(i=1)$, Delta$(i=2)$ and Omicron$(i=3)$. 
+<br>The vaccination levels also has three types: low$(j=1)$, medium$(j=2)$ and high$(j=3)$.
+<br>${\mu_{ij}}$ represents the mean response for a given treatment. Note, for instance, that ${\mu_{21}}=50000$ indicates that the mean new cases per day for ${1st}$ virus that is Delta, vaccination level is low is 50000. 
+<br>${\alpha_{i}}$ refers to main virus types effect.
+<br>${\beta_{j}}$ refers to main vaccination level effect.
+<br>${(\alpha\beta)_{ij}}$ refer to interactions effect.
+<br>About my proposed two-way ANOVA model, the constraints are:
+<br>$\sum {\alpha_i}=\sum{\beta_j}=0$ and $\sum_{i=1}^a ({\alpha\beta_{ij}})=\sum_{j=1}^b ({\alpha\beta_{ij}})=0$
+<br>About my proposed two-way ANOVA model, the assumptions include:
+<br>${1}:$ The response variable is continuous variable.
+<br>${2:}$ There are two factors,and both of them are categorical variables.
+<br>${3:}$ The observations are mutually independent.
+<br>${4:}$ There are no significant outliers in either category.
+<br>${5:}$ Residuals$({\epsilon_{ijk}})$ are approximately normal distribution and homoskedasticity.
+```{r, echo = F,include = FALSE}
+final_case_1$vaccinated_level = as.factor(final_case_1$vaccinated_level)
+final_case_1$variant = as.factor(final_case_1$variant)
+
+options(repr.plot.width=12, repr.plot.height=12)
+library(gplots)
+```
+
+```{r, echo = F}
+# Main effect plot for variant
+plotmeans(log_newcase~variant, data=final_case_1, xlab = "variant", ylab = "log-new-cases", main="Main effect of variant", cex.lab=1.5)
+```
+```{r, echo = F}
+# Main effect plot for vaccinated_level
+plotmeans(log_newcase~vaccinated_level, data=final_case_1, xlab = "vaccinated_level", ylab = "log-new-cases", main="Main effect of vaccinated_level", cex.lab=1.5) 
+```
+<br>Based on the main effect plot for virus types, because the line is not horizontal, there is main effect. However, the difference of effect of Delta and SARA-COV-2 is subtle. For the factor: vaccination levels, different levels have different effects on the response variable.
+<br>The next part is then whether the interaction effects are present, i.e., whether we should use a two-way-ANOVA model with or without interactions.
+```{r, echo = F, include = FALSE}
+full_model = lm(log_newcase ~ as.factor(vaccinated_level) + as.factor(variant) + as.factor(vaccinated_level) * as.factor(variant), data = final_case_1);
+
+reduced_model = lm(log_newcase ~ as.factor(vaccinated_level) + as.factor(variant), data = final_case_1);
+
+anova(reduced_model, full_model)
+```
+<br> Df.      RSS      Sum of Sq    Pr(>F) 
+   -------  --------  ----------   -------
+     312     113.19       NA          NA  
+     310     102.69     10.503     1.23e-06
+
+<br>In order to determine whether add the interaction term into model, I do the F-test. Assuming ${\alpha=0.05}$. The result shows that the value of $p<0.05$, so I should reject the null hypothesis. In other words, I should add interaction term into the model. So in my report, I select the reduced model: ${Y_{ijk}}={\mu_{ij}+{\alpha_{i}+{\beta_{j}+{(\alpha\beta)_{ij}}+{\epsilon_{ijk}}}}}$ to explore question.
+```{r, echo = F, include = FALSE}
+library(pander)
+anova.reg = aov(log_newcase ~ vaccinated_level + variant + vaccinated_level * variant, data = final_case_1)
+```
+
+```{r, echo = F}
+pander(summary(anova.reg))
+```
+
+<br>Based on the fitting results, it seems that both vaccination level, virus types and interactions may have significant impact on the response variable--daily new cases. So we can conclude that at least one virus types is different than the others in terms of new cases every day in the United States. And at least one vaccination level is different than the others in terms of daily new cases in the United States.
+
+## Post-hoc test
+<br>We are also interested in knowing which level is different, which leads us to use The Tukey-Kramer method. Tukey-HSD is used to compare all groups to each other. The results of the post-hoc test can be visualized. Based on the differences in mean levels of vaccination level plot, we can see that the confidence intervals of medium-high cross the zero line. And the confidence intervals of medium-low and high-low do not cross the zero line, which indicate that low vaccination level are significantly different from the others. Based on the differences in mean levels of virus types plot, we can see that the confidence intervals do not cross the zero lines, which indicates that all groups are significantly different.
+```{r, echo = F}
+sig.level = 0.05
+T.ci=TukeyHSD(anova.reg, conf.level = 1-sig.level)
+plot(T.ci, las=1 , col="brown")
+```
+</p>
+# Sensitivity analysis
+## Normality
+<br>For our ANOVA model, normality and equality of variance need to be met.
+I first check normality. From the histogram and QQ-plot, we can see that the histogram roughly form a bell curve, which indicates that the residuals meets the normality. Furthermore, based on the QQ-plot, most of points roughly follow the straight line and nearly all points are within the confidence bands, indicating that the residuals follow a normal distribution.
+```{r, echo = F, include = FALSE}
+library(car)
+par(mfrow = c(1, 2)) # combine plots
+```
+
+```{r, echo = F}
+# histogram
+hist(anova.reg$residuals)
+# QQ-plot
+qqPlot(anova.reg$residuals,
+  id = FALSE
+)
+```
+
+## Homogeneity
+
+<br>If our model have met normality, then we need to check whether the variances are equal across groups or not. Based on below plot on the left side, we can see that there is no evident relation between residuals and fitted values, so we consider that homogeneity of variances is met.
+```{r, echo = F}
+options(repr.plot.width=12, repr.plot.height=6)
+par(mfrow=c(1,2))
+plot(anova.reg,cex.lab=1.2,which=1:2)
+par(mfrow=c(1,1))
+```
+
+# Causal Inference
+<br>In order to prove different virus type and vaccination level can affect daily new cases, it is reasonable to conduct casual inference. 
+<br>In this project, for example, If we want to prove that the level of vaccinating has an impact on our daily new cases, we need to find a country that is similar to the United States, including economy level, humidity, climate, population density, etc. Besides, the observations should be within same time period with that of this project selection, and the variant should be the same in the corresponding time period. Obviously, it's impossible to find such country. Therefore, casual inference could not be used to explore our question of interest at this stage.
+
+# Conclusion
+<br>Based on our results of two-way ANOVA, the project think all virus types is different than the others in terms of daily new cases in the United States. And low vaccination level is different than the others in terms of new cases every day in the United States. Meanwhile, based on the Q-Q plot, most of points follow the straight line and nearly all points are within the confidence bands, indicating that the residuals follow a normal distribution. And there is no obvious relation between residuals and fitted values, which shows that homogeneity of variance is met.
+<br>Because our response variables is time series data, there could be relation between different data. In other words, response variables could include other information, such as the seasonality, trend, noise, etc. It makes sense to extract these information from the data before building two-way ANOVA model. 
+<br>Because vaccination level also can be added into model as continuous variables. Therefore, I think it is reasonable to build ANCOVA model to explore the relation between vaccination level and daily new cases.
+
+# Acknowledgement {-}
+
+<span style='color:black'>
+Zhikuan Quan, Qian Chen, Zixiao Guo, Guanghao He, Bo zhang, Xinyi Li
+</span>
+
+# Reference {-}
+<span style='color:black'>
+<br>[1]World Health Organization, Coronavirus disease (COVID-2019) situation reports. https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports/. Accessed 9 May 2020.
+<br>[2]Vaccination data. 2022. World Health Organization. https://covid19.who.int/who-data/vaccination-data.csv.
+<br>[3]Sahin M. Impact of weather on COVID-19 pandemic in Turkey. Sci Total Environ. (2020) 728:138810. doi: 10.1016/j.scitotenv.2020.138810
+<br>[4]Qi H, Xiao S, Shi R, Ward MP, Chen Y, Tu W, et al. COVID-19 transmission in Mainland China is associated with temperature and humidity: a time-series analysis. Sci Total Environ. (2020) 728:138778. doi: 10.1016/j.scitotenv.2020.138778
+</span> 
+
+# Appendix-R Code
+<span style='color:black'>
+```{r echo=TRUE, eval=FALSE, results = 'hide'}
+library(tidyverse)
+covid = read_csv("https://covid19.who.int/WHO-COVID-19-global-data.csv")
+```
+
+```{r, eval=FALSE, results = 'hide'}
+usa_covid = covid[covid$Country == 'United States of America',]
+usa_covid_timeseries = ts(usa_covid$New_cases, start = c(2020, 1, 3), frequency = 365)
+
+library(fpp2)
+autoplot(usa_covid_timeseries) + ggtitle("the sequence diagram of new case") + xlab("time") + ylab("new case") + theme(text = element_text(family = "STHeiti")) + theme(plot.title = element_text(hjust = 0.5))
+
+ggseasonplot(usa_covid_timeseries, year.labels=TRUE, year.labels.left=TRUE) +
+  xlab("time")+
+  ylab("new case") +
+  ggtitle("season plot for new case")+
+  theme(text = element_text(family = "STHeiti"))+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r, eval=FALSE, results = 'hide'}
+usa_covid_timeseries %>%
+  stl(t.window=13, s.window="periodic", robust=TRUE) %>%
+  autoplot()
+
+a = usa_covid_timeseries %>% 
+  mstl() %>% 
+  seasadj()
+
+usa_covid$New_cases = a
+
+autoplot(a) + ggtitle("the sequence diagram of new case") + xlab("time") + ylab("new case") + theme(text = element_text(family = "STHeiti")) + theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r, eval=FALSE, results = 'hide'}
+mid_data = covid[covid$Country == 'United States of America',]
+covid_usa = mid_data[20:789, ]
+
+covid_case = covid_usa %>% 
+  select(Date_reported, New_cases) %>% 
+  mutate(variant = case_when(
+    Date_reported <= '2021-4-1' ~ 'SARS-Cov-2',
+    Date_reported >= '2021-7-12' &
+    Date_reported <= '2021-12-15' ~ 'Delta',
+    Date_reported >= '2021-12-27' ~ 'Omicron',
+    TRUE ~ '0'
+  ))
+```
+
+```{r, eval=FALSE, results = 'hide'}
+original_data =  read.csv("/Users/zhuxiaoran/Desktop/STA207/covid-data.csv")
+full_usa_data = original_data[original_data$iso_code == 'USA',]
+
+covid_case_1 = full_usa_data %>% 
+  mutate(new_vaccinated = c(0, diff(people_vaccinated)))%>%
+  select(new_vaccinated, population)
+
+covid_case_2 = covid_case_1 %>% 
+  mutate(vaccinated_ratio = (new_vaccinated / population) * 100)%>%
+  select(vaccinated_ratio)
+
+final_data = cbind(covid_case, covid_case_2) %>% 
+  replace_na(list(vaccinated_ratio = 0)) %>% 
+  filter(variant != 0, vaccinated_ratio != 0)
+```
+
+```{r, eval=FALSE, results = 'hide'}
+ggplot(final_data, aes(vaccinated_ratio, New_cases)) + geom_point()
+a = max(final_data$vaccinated_ratio);a
+b = min(final_data$vaccinated_ratio);b
+c = median(final_data$vaccinated_ratio);c
+d = mean(final_data$vaccinated_ratio);d
+quantile(final_data$vaccinated_ratio, c(0.33, 0.66))
+```
+
+```{r, eval=FALSE, results = 'hide'}
+final_case = final_data %>% 
+  select(Date_reported, New_cases, variant, vaccinated_ratio) %>% 
+  mutate(vaccinated_level = case_when(
+    vaccinated_ratio <= 0.078 ~ 'low',
+    vaccinated_ratio > 0.078  &
+    vaccinated_ratio <= 0.147 ~ 'medium',
+    TRUE ~ 'high'
+  ))
+```
+
+```{r, eval=FALSE, results = 'hide'}
+summary_data = final_case %>% 
+  group_by(variant) %>% 
+  summarise(mean = mean(New_cases))
+```
+
+```{r, eval=FALSE, results = 'hide'}
+library(ggplot2)
+
+ggplot(final_case) +
+  aes(x = variant, y = New_cases, color = variant) +
+  geom_jitter() +
+  theme(legend.position = "none")
+
+ggplot(final_case) +
+  aes(x = vaccinated_level, y = New_cases, color = vaccinated_level) +
+  geom_jitter() +
+  theme(legend.position = "none")
+```
+
+```{r, eval=FALSE, results = 'hide'}
+library(ggplot2)
+ggplot(final_case, aes(x = variant, y = New_cases)) +
+  geom_boxplot(aes(colour = variant))
+
+ggplot(final_case, aes(x = vaccinated_level, y = New_cases)) +
+  geom_boxplot(aes(colour = vaccinated_level))
+```
+
+```{r, eval=FALSE, results = 'hide'}
+out = boxplot.stats(final_case$New_cases)$out
+final_case %>% 
+  filter(New_cases %in% out)
+
+final_case = final_case %>% 
+  filter(!(New_cases %in% out))
+```
+
+```{r, eval=FALSE, results = 'hide'}
+library(gplots)
+final_case$vaccinated_level = as.factor(final_case$vaccinated_level)
+final_case$variant = as.factor(final_case$variant)
+
+options(repr.plot.width=12, repr.plot.height=12)
+
+# Main effect plot for vaccinated_level
+plotmeans(New_cases~vaccinated_level, data=final_case, xlab = "vaccinated_level", ylab = "new-cases", main="Main effect of vaccinated_level", cex.lab=1.5) 
+
+# Main effect plot for variant
+plotmeans(New_cases~variant, data=final_case, xlab = "variant", ylab = "new-cases", main="Main effect of variant", cex.lab=1.5)
+
+```
+
+```{r, eval=FALSE, results = 'hide'}
+full_model = lm(New_cases ~ as.factor(vaccinated_level) + as.factor(variant) + as.factor(vaccinated_level) * as.factor(variant), data = final_case);
+
+reduced_model = lm(New_cases ~ as.factor(vaccinated_level) + as.factor(variant), data = final_case);
+
+anova(reduced_model, full_model)
+```
+
+```{r, eval=FALSE, results = 'hide'}
+library(stats)
+sig.level=0.05;
+
+anova.fit = aov(New_cases ~ vaccinated_level + variant + vaccinated_level * variant, data = final_case)
+summary(anova.fit)
+```
+
+```{r, eval=FALSE, results = 'hide'}
+options(repr.plot.width=12, repr.plot.height=6)
+par(mfrow=c(1,2))
+plot(anova.fit,cex.lab=1.2,which=1:2)
+par(mfrow=c(1,1))
+
+#shapiro.test
+shapiro.test(anova.fit$residuals)
+```
+
+```{r, eval=FALSE, results = 'hide'}
+T.ci=TukeyHSD(anova.fit,conf.level = 1-sig.level)
+plot(T.ci, las=1 , col="brown")
+```
+
+
+```{r, eval=FALSE, results = 'hide'}
+final_case_1 = final_case %>% 
+  mutate(log_newcase = log(New_cases))%>%
+  select(Date_reported, log_newcase, variant, vaccinated_ratio, vaccinated_level)
+
+library(ggplot2)
+ggplot(final_case_1, aes(x = variant, y = log_newcase)) +
+  geom_boxplot(aes(colour = variant))
+
+ggplot(final_case_1, aes(x = vaccinated_level, y = log_newcase)) +
+  geom_boxplot(aes(colour = vaccinated_level))
+
+ggplot(final_case_1) +
+  aes(x = variant, y = log_newcase, color = variant) +
+  geom_jitter() +
+  theme(legend.position = "none")
+
+ggplot(final_case_1) +
+  aes(x = vaccinated_level, y = log_newcase, color = vaccinated_level) +
+  geom_jitter() +
+  theme(legend.position = "none")
+```
+
+```{r, eval=FALSE, results = 'hide'}
+full_model_1 = lm(log_newcase ~ as.factor(vaccinated_level) + as.factor(variant) + as.factor(vaccinated_level) * as.factor(variant), data = final_case_1);
+
+reduced_model_1 = lm(log_newcase ~ as.factor(vaccinated_level) + as.factor(variant), data = final_case_1);
+
+anova(reduced_model, full_model)
+```
+
+```{r, eval=FALSE, results = 'hide'}
+anova.reg = aov(log_newcase ~ vaccinated_level + variant + vaccinated_level * variant, data = final_case_1)
+summary(anova.reg)
+
+options(repr.plot.width=12, repr.plot.height=6)
+par(mfrow=c(1,2))
+plot(anova.reg,cex.lab=1.2,which=1:2)
+par(mfrow=c(1,1))
+```
+</span>
